@@ -27,7 +27,7 @@ class HangUpApp:
     def __init__(self):
         self.target_url = "https://ucloud.unipus.cn/"
         self.root = tk.Tk()
-        self.root.title("U校园CNM(v1.1)")
+        self.root.title("U校园CNM(v1.2)")
         self.root.geometry("560x360")
 
         self.page = None
