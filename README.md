@@ -84,3 +84,8 @@ python "U校园cnm.py"
 - `U校园cnm.exe`：可从 [GitHub Release v1.0](https://github.com/XtSilan/U-cnm/releases/tag/v1.0) 下载
 
 - `U校园cnm.py`：主程序文件
+
+## 更新日志
+
+- v1.0提交仓库
+- v1.1增加浏览器保活，改善最小化后台冻结

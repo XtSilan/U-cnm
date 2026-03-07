@@ -81,6 +81,11 @@ class HangUpApp:
         options = ChromiumOptions()
         if browser_path:
             options.set_browser_path(browser_path)
+        # 尽量降低浏览器在最小化/后台时的节流与挂起概率，提升挂机稳定性。
+        options.set_argument("--disable-background-timer-throttling")
+        options.set_argument("--disable-backgrounding-occluded-windows")
+        options.set_argument("--disable-renderer-backgrounding")
+        options.set_argument("--disable-features=CalculateNativeWinOcclusion")
         return options
 
     def _prevent_sleep(self):
@@ -237,9 +242,16 @@ class HangUpApp:
     def _monitor_loop(self):
         self.log("开始监听弹窗...")
         self._set_status("挂机中（监听弹窗）")
+        last_heartbeat = 0.0
         try:
             while self.monitoring:
                 try:
+                    # 定时执行一个极轻量 JS，避免页面长时间完全空闲被系统判定为可挂起。
+                    now = time.time()
+                    if now - last_heartbeat >= 20:
+                        self.page.run_js("void 0;")
+                        last_heartbeat = now
+
                     btn = self.page.ele(self.confirm_btn_xpath, timeout=0)
                     if btn:
                         btn.click()
