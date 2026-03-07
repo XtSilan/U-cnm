@@ -210,10 +210,27 @@ class HangUpApp:
         self.log_text.insert("end", line)
         self.log_text.see("end")
 
+    def _page_connected(self):
+        if self.page is None:
+            return False
+        try:
+            self.page.run_js("void 0;")
+            return True
+        except Exception:
+            return False
+
+    def _is_disconnect_error(self, err):
+        text = str(err)
+        tokens = ["连接已断开", "disconnected", "Target page, context or browser has been closed"]
+        return any(t in text for t in tokens)
+
     def open_browser(self):
         def do_open():
             browser_path = self._load_saved_browser_path()
-            if self.page is None:
+            if not self._page_connected():
+                if self.page is not None:
+                    self.log("检测到旧浏览器连接已失效，正在重新连接...")
+                self.page = None
                 self.page = ChromiumPage(self._build_options(browser_path))
                 self.log(f"浏览器已连接，正在打开：{self.target_url}")
                 self.page.get(self.target_url)
@@ -226,6 +243,7 @@ class HangUpApp:
         try:
             do_open()
         except Exception as e:
+            self.page = None
             self.log(f"首次连接浏览器失败：{e}")
             self.log("尝试自动配置浏览器路径...")
 
@@ -234,6 +252,7 @@ class HangUpApp:
                     do_open()
                     return
                 except Exception as e2:
+                    self.page = None
                     self.log(f"配置后重试仍失败：{e2}")
                     messagebox.showerror("错误", f"打开浏览器失败：\n{e2}")
             else:
@@ -261,6 +280,11 @@ class HangUpApp:
                         time.sleep(1.0)
                 except Exception as e:
                     self.log(f"监听异常：{e}")
+                    if self._is_disconnect_error(e):
+                        self.log("检测到浏览器/页面连接已断开，已自动停止挂机，请重新点击“打开浏览器”。")
+                        self.page = None
+                        self.monitoring = False
+                        break
                     time.sleep(1.2)
         finally:
             self._restore_power_policy()
@@ -268,7 +292,8 @@ class HangUpApp:
             self.log("监听已停止。")
 
     def start_monitor(self):
-        if self.page is None:
+        if not self._page_connected():
+            self.page = None
             messagebox.showwarning("提示", "请先点击“打开浏览器”。")
             return
         if self.monitoring:
