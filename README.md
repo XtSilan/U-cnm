@@ -37,7 +37,7 @@ pip install DrissionPage
 ```powershell
 python "U校园cnm.py"
 ```
-（或者从 [GitHub Release v1.0](https://github.com/XtSilan/U-cnm/releases/tag/v1.0) 下载打包好的 exe）
+（或者从 [GitHub Release v1.1](https://github.com/XtSilan/U-cnm/releases) 下载打包好的 exe）
 
 2. 点击“打开浏览器”，程序会打开 `https://ucloud.unipus.cn/`。
 3. 在浏览器中手动登录并进入课程学习页面（建议学习vocabulary）。
@@ -81,7 +81,7 @@ python "U校园cnm.py"
 
 ## 文件说明
 
-- `U校园cnm.exe`：可从 [GitHub Release v1.0](https://github.com/XtSilan/U-cnm/releases/tag/v1.0) 下载
+- `U校园cnm.exe`：可从 [GitHub Release v1.1](https://github.com/XtSilan/U-cnm/releases) 下载
 
 - `U校园cnm.py`：主程序文件
 
