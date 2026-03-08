@@ -46,6 +46,9 @@ class HangUpApp:
             "xpath://div[.//p[contains(.,'由于你长时间未操作，请点确定继续使用。')]]"
             "//button[normalize-space()='确定']"
         )
+        # STATE_STOP 持续过久通常意味着会话异常（例如登录态丢失）。
+        self.stop_stuck_timeout_seconds = 30 #判定登陆丢失时间
+        self.stop_recover_cooldown_seconds = 60 #自动恢复冷却时间
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.on_close)
@@ -348,6 +351,13 @@ class HangUpApp:
         time.sleep(1.0)
         self._try_auto_login_after_refresh()
 
+    def _recover_from_stuck_stop(self):
+        self.log("STATE_STOP 持续过久，判定可能登录态丢失，开始自动恢复。")
+        self.page.refresh()
+        self.log("页面刷新完成，尝试自动执行登录。")
+        time.sleep(1.0)
+        self._try_auto_login_after_refresh()
+
     def _probe_timeline(self):
         script = """
         return (() => {
@@ -449,6 +459,8 @@ class HangUpApp:
         last_heartbeat = 0.0
         last_sdk_state = "UNKNOWN"
         last_error_recover_at = 0.0
+        stop_state_since = None
+        last_stop_recover_at = 0.0
         try:
             while self.monitoring:
                 try:
@@ -461,10 +473,13 @@ class HangUpApp:
                     sdk_state = self._get_sdk_state()
                     if sdk_state != last_sdk_state:
                         self._set_sdk_state(sdk_state)
-                        """ self.log(f"SDK 状态变更：{last_sdk_state} -> {sdk_state}") """
                         if sdk_state == "UNKNOWN":
                             self.log(f"timeline 探测结果：{self._probe_timeline()}")
                             self.log(f"SDK 调试探针：{self._debug_sdk_probe()}")
+                        if sdk_state == "STATE_STOP":
+                            stop_state_since = now
+                        else:
+                            stop_state_since = None
                         last_sdk_state = sdk_state
 
                     if sdk_state == "STATE_ERROR":
@@ -483,7 +498,16 @@ class HangUpApp:
                             self.log("检测到超时弹窗，已自动点击“确定”。")
                             time.sleep(0.6)
                         else:
-                            time.sleep(1.0)
+                            if (
+                                stop_state_since is not None
+                                and now - stop_state_since >= self.stop_stuck_timeout_seconds
+                                and now - last_stop_recover_at >= self.stop_recover_cooldown_seconds
+                            ):
+                                last_stop_recover_at = now
+                                self._recover_from_stuck_stop()
+                                time.sleep(1.0)
+                            else:
+                                time.sleep(1.0)
                         continue
 
                     time.sleep(1.0)
