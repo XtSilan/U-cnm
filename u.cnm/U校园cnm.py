@@ -27,7 +27,7 @@ class HangUpApp:
     def __init__(self):
         self.target_url = "https://ucloud.unipus.cn/"
         self.root = tk.Tk()
-        self.root.title("U校园CNM(v1.2)")
+        self.root.title("U校园CNM(v1.3)")
         self.root.geometry("560x360")
 
         self.page = None
@@ -262,6 +262,8 @@ class HangUpApp:
         self.log("开始监听弹窗...")
         self._set_status("挂机中（监听弹窗）")
         last_heartbeat = 0.0
+        no_popup_timeout_seconds = 40 * 60
+        last_popup_detected_at = time.time()
         try:
             while self.monitoring:
                 try:
@@ -275,8 +277,14 @@ class HangUpApp:
                     if btn:
                         btn.click()
                         self.log("检测到弹窗，已自动点击“确定”。")
+                        last_popup_detected_at = now
                         time.sleep(0.6)
                     else:
+                        if now - last_popup_detected_at >= no_popup_timeout_seconds:
+                            self.log("超时未检测到弹窗，正在自动刷新当前页面...")
+                            self.page.refresh()
+                            self.log("页面刷新完成，已重新开始计时。")
+                            last_popup_detected_at = time.time()
                         time.sleep(1.0)
                 except Exception as e:
                     self.log(f"监听异常：{e}")

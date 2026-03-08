@@ -37,7 +37,7 @@ pip install DrissionPage
 ```powershell
 python "U校园cnm.py"
 ```
-（或者从 [GitHub Release v1.2](https://github.com/XtSilan/U-cnm/releases) 下载打包好的 exe）
+（或者从 [GitHub Release v1.3](https://github.com/XtSilan/U-cnm/releases) 下载打包好的 exe）
 
 2. 点击“打开浏览器”，程序会打开 `https://ucloud.unipus.cn/`。
 3. 在浏览器中手动登录并进入课程学习页面（建议学习vocabulary）。
@@ -79,14 +79,22 @@ python "U校园cnm.py"
 - 可能受系统策略、权限或第三方电源管理软件影响。
 - 不影响弹窗监听主流程。
 
+### 4.长时间未弹出确认窗口
+
+- 由于网络波动导致Unipus的`stop`请求失败，连接状态变为`STATE_ERROR`此时`stop_auto`不会触发，导致不会弹窗也无法记录时长。
+  - 解决办法: 程序设定40分钟未检测到弹窗自动刷新页面重新计时(可能丢失部分学习时长)。
+- 可能浏览器处于最小化状态，自动进入节流模式，定时器精度被限制，`timeout`时间被拉长。
+  - 解决办法: 将浏览器至于前台。
+
 ## 文件说明
 
-- `U校园cnm.exe`：可从 [GitHub Release v1.2](https://github.com/XtSilan/U-cnm/releases) 下载
+- `U校园cnm.exe`：可从 [GitHub Release v1.3](https://github.com/XtSilan/U-cnm/releases) 下载
 
 - `U校园cnm.py`：主程序文件
 
 ## 更新日志
 
-- v1.0:提交仓库
-- v1.1:增加浏览器保活，改善最小化后台冻结
-- v1.2:新增连接存活检测,修复检测连接逻辑,增加校验连接
+- v1.0: 提交仓库
+- v1.1: 增加浏览器保活，改善最小化后台冻结
+- v1.2: 新增连接存活检测,修复检测连接逻辑,增加校验连接
+- v1.3: 新增`error`状态自动刷新页面
