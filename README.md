@@ -7,10 +7,13 @@
 ## 功能
 
 - 图形界面操作（打开浏览器、开始挂机、停止挂机）
-- 自动检测并点击提示弹窗“确定”
+- 基于 `timeline.state` 实时监测 SDK 状态（`STATE_READY/CONNECT/START/STOP/ERROR`）
+- 自动从当前页面或同源子 frame 检测 `timeline` 实例，提升状态识别稳定性
+- `STATE_STOP` 时自动检测并点击提示弹窗“确定”
+- `STATE_ERROR` 时自动刷新页面并尝试勾选协议后点击登录恢复
 - 自动/手动配置浏览器路径，并保存到本地配置
 - 挂机期间尝试防止系统休眠与息屏
-- 日志窗口实时显示运行状态
+- 日志窗口实时显示运行状态与 SDK 状态
 
 ## 运行环境
 
@@ -37,12 +40,21 @@ pip install DrissionPage
 ```powershell
 python "U校园cnm.py"
 ```
-（或者从 [GitHub Release v1.3](https://github.com/XtSilan/U-cnm/releases) 下载打包好的 exe）
+（或者从 [GitHub Release v2.0](https://github.com/XtSilan/U-cnm/releases) 下载打包好的 exe）
 
 2. 点击“打开浏览器”，程序会打开 `https://ucloud.unipus.cn/`。
 3. 在浏览器中手动登录并进入课程学习页面（建议学习vocabulary）。
 4. 点击“开始挂机”，程序会持续监听“长时间未操作”弹窗并自动点击“确定”。
 5. 完成学习后点击“停止挂机”或直接关闭程序。
+
+## SDK 状态说明
+
+- `STATE_READY`：WebSocket 未连接或连接断开
+- `STATE_CONNECT`：WebSocket 已连接，尚未进入计时
+- `STATE_START`：学习计时进行中
+- `STATE_STOP`：已停止计时（通常为超时自动停止后等待确认）
+- `STATE_ERROR`：`start/stop` 请求异常（常见于网络波动）
+- `UNKNOWN`：当前页面未找到可读取的 `timeline`
 
 ## 浏览器路径配置说明
 
@@ -79,16 +91,23 @@ python "U校园cnm.py"
 - 可能受系统策略、权限或第三方电源管理软件影响。
 - 不影响弹窗监听主流程。
 
-### 4.长时间未弹出确认窗口
+### 4. 长时间未弹出确认窗口
 
-- 由于网络波动导致Unipus的`stop`请求失败，连接状态变为`STATE_ERROR`此时`stop_auto`不会触发，导致不会弹窗也无法记录时长。
-  - 解决办法: 程序设定40分钟未检测到弹窗自动刷新页面重新计时(可能丢失部分学习时长)。
-- 可能浏览器处于最小化状态，自动进入节流模式，定时器精度被限制，`timeout`时间被拉长。
-  - 解决办法: 将浏览器至于前台。
+- `STATE_STOP` 时脚本会继续监听并自动点击“确定”。
+- 若网络波动导致 `stop` 请求失败进入 `STATE_ERROR`，脚本会自动刷新页面并尝试自动登录恢复。
+- 可能浏览器处于最小化状态，自动进入节流模式，定时器精度被限制，`timeout` 时间被拉长。
+  - 解决办法：尽量将浏览器置于前台。
+
+### 5. SDK 状态一直是 `UNKNOWN`
+
+- 确认当前标签页已进入具体学习内容页（不是课程列表页或空白页）。
+- 点击一次课程内容，等待页面 JS 初始化（`window.timeline` 可能延迟创建）。
+- 查看日志中的 `timeline 探测结果` 与 `SDK 调试探针`，确认是否检测到 `timeline@window` 或 `timeline@frame[x]`。
+- 若页面刚刷新并跳转登录，先完成登录，状态会在进入学习页后恢复为 `STATE_CONNECT/STATE_START`。
 
 ## 文件说明
 
-- `U校园cnm.exe`：可从 [GitHub Release v1.3](https://github.com/XtSilan/U-cnm/releases) 下载
+- `U校园cnm.exe`：可从 [GitHub Release v2.0](https://github.com/XtSilan/U-cnm/releases) 下载
 
 - `U校园cnm.py`：主程序文件
 
@@ -98,3 +117,4 @@ python "U校园cnm.py"
 - v1.1: 增加浏览器保活，改善最小化后台冻结
 - v1.2: 新增连接存活检测,修复检测连接逻辑,增加校验连接
 - v1.3: 新增`error`状态自动刷新页面
+- v2.0: 重构为基于 `timeline.state` 的状态监测；`STATE_STOP` 自动点确定；`STATE_ERROR` 自动刷新并尝试登录恢复；新增 SDK 状态显示

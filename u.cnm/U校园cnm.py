@@ -27,7 +27,7 @@ class HangUpApp:
     def __init__(self):
         self.target_url = "https://ucloud.unipus.cn/"
         self.root = tk.Tk()
-        self.root.title("U校园CNM(v1.3)")
+        self.root.title("U校园CNM(v2.0)")
         self.root.geometry("560x360")
 
         self.page = None
@@ -178,6 +178,12 @@ class HangUpApp:
             status_frame, textvariable=self.status_var, anchor="w", fg="red"
         )
         self.status_label.pack(side="left")
+        tk.Label(status_frame, text="  SDK状态：", anchor="w").pack(side="left")
+        self.sdk_state_var = tk.StringVar(value="UNKNOWN")
+        self.sdk_state_label = tk.Label(
+            status_frame, textvariable=self.sdk_state_var, anchor="w", fg="black"
+        )
+        self.sdk_state_label.pack(side="left")
 
         tips = (
             "使用步骤：\n"
@@ -204,6 +210,18 @@ class HangUpApp:
         }
         self.status_label.config(fg=color_map.get(text, "black"))
 
+    def _set_sdk_state(self, sdk_state):
+        self.sdk_state_var.set(sdk_state)
+        color_map = {
+            "STATE_READY": "#B8860B",
+            "STATE_CONNECT": "#B8860B",
+            "STATE_START": "green",
+            "STATE_STOP": "red",
+            "STATE_ERROR": "red",
+            "UNKNOWN": "black",
+        }
+        self.sdk_state_label.config(fg=color_map.get(sdk_state, "black"))
+
     def log(self, msg):
         now = time.strftime("%H:%M:%S")
         line = f"[{now}] {msg}\n"
@@ -224,6 +242,172 @@ class HangUpApp:
         tokens = ["连接已断开", "disconnected", "Target page, context or browser has been closed"]
         return any(t in text for t in tokens)
 
+    def _get_sdk_state(self):
+        script = """
+        return (() => {
+            try {
+                const states = ["STATE_READY", "STATE_CONNECT", "STATE_START", "STATE_STOP", "STATE_ERROR"];
+                const normalizeState = (value) => {
+                    if (value === undefined || value === null) return null;
+                    const text = String(value);
+                    return states.includes(text) ? text : null;
+                };
+
+                // 1) 当前页面直接查
+                if (window.timeline) {
+                    const state = normalizeState(window.timeline.state);
+                    if (state) return state;
+                }
+
+                // 1.1) 全局属性兜底：找具有 start/stop/on/off/state 的 timeline 实例
+                for (const key in window) {
+                    try {
+                        const obj = window[key];
+                        if (!obj || typeof obj !== "object") continue;
+                        if (typeof obj.start !== "function") continue;
+                        if (typeof obj.stop !== "function") continue;
+                        if (typeof obj.on !== "function") continue;
+                        if (typeof obj.off !== "function") continue;
+                        const state = normalizeState(obj.state);
+                        if (state) {
+                            if (!window.timeline) window.timeline = obj;
+                            return state;
+                        }
+                    } catch (e) {
+                        // ignore
+                    }
+                }
+
+                // 2) 同源子 frame 里查（学习页面常见嵌套）
+                for (let i = 0; i < window.frames.length; i++) {
+                    try {
+                        const frameWin = window.frames[i];
+                        if (!frameWin || !frameWin.timeline) continue;
+                        const state = normalizeState(frameWin.timeline.state);
+                        if (state) return state;
+                    } catch (e) {
+                        // 跨域 frame 会抛错，忽略继续
+                    }
+                }
+
+                return "UNKNOWN";
+            } catch (e) {
+                return "UNKNOWN";
+            }
+        })();
+        """
+        state = self.page.run_js(script)
+        return str(state) if state else "UNKNOWN"
+
+    def _debug_sdk_probe(self):
+        script = """
+        return (() => {
+            try {
+                const out = {
+                    href: window.location.href || "",
+                    hasTimeline: !!window.timeline,
+                    timelineStateRaw: null,
+                    timelineStateType: null,
+                    candidateKey: null,
+                    candidateStateRaw: null,
+                    frameCount: window.frames.length || 0
+                };
+
+                if (window.timeline) {
+                    out.timelineStateRaw = String(window.timeline.state);
+                    out.timelineStateType = typeof window.timeline.state;
+                }
+
+                for (const key in window) {
+                    try {
+                        const obj = window[key];
+                        if (!obj || typeof obj !== "object") continue;
+                        if (typeof obj.start !== "function" || typeof obj.stop !== "function") continue;
+                        if (typeof obj.on !== "function" || typeof obj.off !== "function") continue;
+                        out.candidateKey = key;
+                        out.candidateStateRaw = String(obj.state);
+                        break;
+                    } catch (e) {}
+                }
+                return JSON.stringify(out);
+            } catch (e) {
+                return "probe_error:" + String(e);
+            }
+        })();
+        """
+        try:
+            result = self.page.run_js(script)
+            return str(result) if result else "probe_empty"
+        except Exception as e:
+            return f"probe_exception:{e}"
+
+    def _recover_from_state_error(self):
+        self.log("检测到 STATE_ERROR，准备刷新页面尝试恢复。")
+        self.page.refresh()
+        self.log("页面刷新完成，尝试自动执行登录。")
+        time.sleep(1.0)
+        self._try_auto_login_after_refresh()
+
+    def _probe_timeline(self):
+        script = """
+        return (() => {
+            try {
+                if (window.timeline) return "timeline@window";
+                for (let i = 0; i < window.frames.length; i++) {
+                    try {
+                        if (window.frames[i] && window.frames[i].timeline) {
+                            return "timeline@frame[" + i + "]";
+                        }
+                    } catch (e) {}
+                }
+                return "timeline_not_found";
+            } catch (e) {
+                return "timeline_probe_error";
+            }
+        })();
+        """
+        try:
+            result = self.page.run_js(script)
+            return str(result) if result else "timeline_probe_error"
+        except Exception:
+            return "timeline_probe_error"
+
+    def _try_auto_login_after_refresh(self):
+        agreement_xpath = (
+            "xpath://div[contains(@class,'login-action')]"
+            "//div[@id='agreement']//input[@type='checkbox']"
+        )
+        login_btn_xpath = (
+            "xpath://div[contains(@class,'login-action')]"
+            "//button[@id='login' and normalize-space()='登录']"
+        )
+
+        login_btn = self.page.ele(login_btn_xpath, timeout=2)
+        if not login_btn:
+            self.log("未检测到登录按钮，继续监听 SDK 状态。")
+            return
+
+        checked = False
+        try:
+            checked = bool(
+                self.page.run_js(
+                    "const n=document.querySelector('#agreement input[type=\"checkbox\"]');"
+                    "return n ? n.checked : false;"
+                )
+            )
+        except Exception:
+            checked = False
+
+        if not checked:
+            checkbox = self.page.ele(agreement_xpath, timeout=1)
+            if checkbox:
+                checkbox.click()
+                self.log("已自动勾选登录协议。")
+                time.sleep(0.2)
+
+        login_btn.click()
+        self.log("已自动点击登录按钮。")
+
     def open_browser(self):
         def do_open():
             browser_path = self._load_saved_browser_path()
@@ -239,6 +423,7 @@ class HangUpApp:
                 self.log(f"浏览器已连接，正在跳转：{self.target_url}")
                 self.page.get(self.target_url)
             self._set_status("浏览器已连接，等待开始挂机")
+            self._set_sdk_state("UNKNOWN")
 
         try:
             do_open()
@@ -262,8 +447,8 @@ class HangUpApp:
         self.log("开始监听弹窗...")
         self._set_status("挂机中（监听弹窗）")
         last_heartbeat = 0.0
-        no_popup_timeout_seconds = 40 * 60
-        last_popup_detected_at = time.time()
+        last_sdk_state = "UNKNOWN"
+        last_error_recover_at = 0.0
         try:
             while self.monitoring:
                 try:
@@ -273,19 +458,35 @@ class HangUpApp:
                         self.page.run_js("void 0;")
                         last_heartbeat = now
 
-                    btn = self.page.ele(self.confirm_btn_xpath, timeout=0)
-                    if btn:
-                        btn.click()
-                        self.log("检测到弹窗，已自动点击“确定”。")
-                        last_popup_detected_at = now
-                        time.sleep(0.6)
-                    else:
-                        if now - last_popup_detected_at >= no_popup_timeout_seconds:
-                            self.log("超时未检测到弹窗，正在自动刷新当前页面...")
-                            self.page.refresh()
-                            self.log("页面刷新完成，已重新开始计时。")
-                            last_popup_detected_at = time.time()
-                        time.sleep(1.0)
+                    sdk_state = self._get_sdk_state()
+                    if sdk_state != last_sdk_state:
+                        self._set_sdk_state(sdk_state)
+                        """ self.log(f"SDK 状态变更：{last_sdk_state} -> {sdk_state}") """
+                        if sdk_state == "UNKNOWN":
+                            self.log(f"timeline 探测结果：{self._probe_timeline()}")
+                            self.log(f"SDK 调试探针：{self._debug_sdk_probe()}")
+                        last_sdk_state = sdk_state
+
+                    if sdk_state == "STATE_ERROR":
+                        if now - last_error_recover_at >= 30:
+                            last_error_recover_at = now
+                            self._recover_from_state_error()
+                            time.sleep(1.0)
+                        else:
+                            time.sleep(1.0)
+                        continue
+
+                    if sdk_state == "STATE_STOP":
+                        btn = self.page.ele(self.confirm_btn_xpath, timeout=0)
+                        if btn:
+                            btn.click()
+                            self.log("检测到超时弹窗，已自动点击“确定”。")
+                            time.sleep(0.6)
+                        else:
+                            time.sleep(1.0)
+                        continue
+
+                    time.sleep(1.0)
                 except Exception as e:
                     self.log(f"监听异常：{e}")
                     if self._is_disconnect_error(e):
@@ -297,6 +498,7 @@ class HangUpApp:
         finally:
             self._restore_power_policy()
             self._set_status("已停止挂机")
+            self._set_sdk_state("UNKNOWN")
             self.log("监听已停止。")
 
     def start_monitor(self):
